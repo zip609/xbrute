@@ -146,67 +146,129 @@ impl HTTP {
         };
     }
 
+    // fn setup_request_body(
+    //     &self,
+    //     creds: &Credentials,
+    //     csrf: Option<csrf::Token>,
+    //     mut request: RequestBuilder,
+    // ) -> RequestBuilder {
+    //     let mut do_body = true;
+    //     if self.strategy == Strategy::BasicAuth {
+    //         // set basic authentication data
+    //         request = request.basic_auth(&creds.username, Some(&creds.password));
+    //     } else if self.strategy == Strategy::Form {
+    //         // set form data
+    //         let fields = payload::parse_fields(self.payload.as_ref(), creds).unwrap();
+    //         // log::info!("http.fields={:?}", &fields);
+    //         let mut form = multipart::Form::new();
+    //         for (key, value) in fields {
+    //             form = form.text(key, value);
+    //         }
+
+    //         // handle csrf
+    //         if let Some(token) = csrf.as_ref() {
+    //             form = form.text(token.name.clone(), token.value.clone());
+    //         }
+
+    //         request = request.multipart(form);
+
+    //         // we already added the --http-body value as fields
+    //         do_body = false;
+    //     }
+
+    //     // do we have any fields left to add?
+    //     if do_body && self.payload.is_some() {
+    //         if method_requires_payload(&self.method) {
+    //             // add as body
+    //             let mut body = payload::parse_body(self.payload.as_ref(), creds).unwrap();
+
+    //             // handle csrf
+    //             if let Some(token) = csrf.as_ref() {
+    //                 body.push_str(&format!("&{}={}", token.name, token.value));
+    //             }
+
+    //             // log::info!("http.body={}", &body);
+    //             request = request
+    //                 .body(body)
+    //                 .header("Content-Type", "application/x-www-form-urlencoded");
+    //         } else {
+    //             // add as query string
+    //             let mut query = payload::parse_fields(self.payload.as_ref(), creds).unwrap();
+
+    //             // handle csrf
+    //             if let Some(token) = csrf.as_ref() {
+    //                 query.push((token.name.clone(), token.value.clone()));
+    //             }
+
+    //             // log::info!("http.query={:?}", &query);
+    //             request = request.query(&query);
+    //         }
+    //     }
+
+    //     request
+    // }
+
     fn setup_request_body(
-        &self,
-        creds: &Credentials,
-        csrf: Option<csrf::Token>,
-        mut request: RequestBuilder,
-    ) -> RequestBuilder {
-        let mut do_body = true;
-        if self.strategy == Strategy::BasicAuth {
-            // set basic authentication data
-            request = request.basic_auth(&creds.username, Some(&creds.password));
-        } else if self.strategy == Strategy::Form {
-            // set form data
-            let fields = payload::parse_fields(self.payload.as_ref(), creds).unwrap();
-            // log::info!("http.fields={:?}", &fields);
-            let mut form = multipart::Form::new();
-            for (key, value) in fields {
-                form = form.text(key, value);
-            }
+    &self,
+    creds: &Credentials,
+    csrf: Option<csrf::Token>,
+    mut request: RequestBuilder,
+) -> RequestBuilder {
+    let mut do_body = true;
+    if self.strategy == Strategy::BasicAuth {
+        // set basic authentication data
+        request = request.basic_auth(&creds.username, Some(&creds.password));
+    } else if self.strategy == Strategy::Form {
+        // set form data
+        let fields = payload::parse_fields(self.payload.as_ref(), creds).unwrap();
+        let mut form = multipart::Form::new();
+        for (key, value) in fields {
+            form = form.text(key, value);
+        }
+
+        // handle csrf
+        if let Some(token) = csrf.as_ref() {
+            form = form.text(token.name.clone(), token.value.clone());
+        }
+
+        request = request.multipart(form);
+
+        // we already added the --http-body value as fields
+        do_body = false;
+    }
+
+    // do we have any fields left to add?
+    if do_body && self.payload.is_some() {
+        if method_requires_payload(&self.method) {
+            // add as body
+            let mut body = payload::parse_body(self.payload.as_ref(), creds).unwrap();
 
             // handle csrf
             if let Some(token) = csrf.as_ref() {
-                form = form.text(token.name.clone(), token.value.clone());
+                body.push_str(&format!("&{}={}", token.name, token.value));
             }
 
-            request = request.multipart(form);
-
-            // we already added the --http-body value as fields
-            do_body = false;
-        }
-
-        // do we have any fields left to add?
-        if do_body && self.payload.is_some() {
-            if method_requires_payload(&self.method) {
-                // add as body
-                let mut body = payload::parse_body(self.payload.as_ref(), creds).unwrap();
-
-                // handle csrf
-                if let Some(token) = csrf.as_ref() {
-                    body.push_str(&format!("&{}={}", token.name, token.value));
-                }
-
-                // log::info!("http.body={}", &body);
-                request = request
-                    .body(body)
-                    .header("Content-Type", "application/x-www-form-urlencoded");
-            } else {
-                // add as query string
-                let mut query = payload::parse_fields(self.payload.as_ref(), creds).unwrap();
-
-                // handle csrf
-                if let Some(token) = csrf.as_ref() {
-                    query.push((token.name.clone(), token.value.clone()));
-                }
-
-                // log::info!("http.query={:?}", &query);
-                request = request.query(&query);
+            request = request.body(body);
+            // Check if Content-Type is set already, if not set default
+            if !self.headers.contains_key("Content-Type") {
+                request = request.header("Content-Type", "application/x-www-form-urlencoded");
             }
-        }
+        } else {
+            // add as query string
+            let mut query = payload::parse_fields(self.payload.as_ref(), creds).unwrap();
 
-        request
+            // handle csrf
+            if let Some(token) = csrf.as_ref() {
+                query.push((token.name.clone(), token.value.clone()));
+            }
+
+            request = request.query(&query);
+        }
     }
+
+    request
+}
+
 
     async fn is_success(&self, response: Response) -> Option<Success> {
         let status = response.status().as_u16();
